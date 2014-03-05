@@ -285,82 +285,35 @@ static void *extend_heap(size_t words)
 static void *place(void *bp, size_t asize)
 /* $end mmplace-proto */
 {
-    size_t csize = GET_SIZE(HDRP(bp));
-    size_t split_size = (csize - asize);
+    size_t csize = GET_SIZE(HDRP(bp));   
 
-    if (split_size >= (DSIZE + OVERHEAD)) {
-        size_t avg = (GETSIZE(NEXT_BLKP(bp)) + GETSIZE(PREV_BLKP(bp)))/2;
-        void* large;
-        void *small;
-        int split_side;
-
-        /* Which side should we split on? Let split_side = 0 or 1
-0 = Let's split the end
-1 = Let's split the front
-*/
-        
-        if(GETSIZE(NEXT_BLKP(bp)) > GETSIZE(PREV_BLKP(bp)))
-        {
-
-            large = NEXT_BLKP(bp);
-            small = PREV_BLKP(bp);
-        }
-        else
-        {
-            large = PREV_BLKP(bp);
-            small = NEXT_BLKP(bp);
-        }
-         
-        if(asize > avg)
-        {
-            if(PREV_BLKP(bp) == large)
-                split_side = 0;
-            else
-                split_side = 1;
-        }
-        else
-        {
-            if(PREV_BLKP(bp) == large)
-                split_side = 1;
-            else
-                split_side = 0;
-        }
-        
-        if(split_side != 1)
-        {
+    if ((csize - asize) >= (DSIZE + OVERHEAD)) { 
+        if(GETSIZE(NEXT_BLKP(bp)) > GETSIZE(PREV_BLKP(bp))) {
             PUT(HDRP(bp), PACK(asize, 1));
             PUT(FTRP(bp), PACK(asize, 1));
-
-            void* split = NEXT_BLKP(bp);
-
-            PUT(HDRP(split), PACK(csize-asize, 0));
-            PUT(FTRP(split), PACK(csize-asize, 0));
-
-            tree_root = mm_insert(tree_root,split);
-
+            void* blah = NEXT_BLKP(bp);
+            PUT(HDRP(blah), PACK(csize-asize, 0));
+            PUT(FTRP(blah), PACK(csize-asize, 0));
+            tree_root = mm_insert(tree_root,blah);
             return bp;
         }
-        else
-        {
-            PUT(HDRP(bp), PACK(split_size,0));
-            PUT(FTRP(bp), PACK(split_size,0));
-        
-            void *blk = NEXT_BLKP(bp);
-
-            PUT(HDRP(blk), PACK(asize, 1));
-            PUT(FTRP(blk), PACK(asize, 1));
-
+        else{
+            PUT(HDRP(bp), PACK(csize-asize, 0));
+            PUT(FTRP(bp), PACK(csize-asize, 0));
+            void* blah = NEXT_BLKP(bp);
+            PUT(HDRP(blah), PACK(asize, 1));
+            PUT(FTRP(blah), PACK(asize, 1));
             tree_root = mm_insert(tree_root,bp);
+            return blah;
 
-            return blk;
         }
     }
-    else
-    {
+    else { 
         PUT(HDRP(bp), PACK(csize, 1));
         PUT(FTRP(bp), PACK(csize, 1));
         return bp;
     }
+
 }
 /* $end mmplace */
 
