@@ -102,12 +102,10 @@ static void checkblock(void *bp);
 /* Additional function declarations */
 void *mm_insert(void *root, void *bp);
 void *mm_remove(void *root, void *bp);
-void *mm_ceiling(void *root, int size);
+void *mm_fitter(void *root, int size);
 void *mm_parent(void *root, void *bp);
 void *mm_replace(void *bp);
-void *mm_remove_node(void *root, void *bp);
-void *mm_remove_child(void *root, void *bp);
-void *mm_remove_children(void *root, void *bp);
+
 
 int mm_children(void *root);
 
@@ -164,7 +162,7 @@ void *mm_malloc(size_t size)
         asize = DSIZE * ((size + (OVERHEAD) + (DSIZE-1)) / DSIZE);
     
     /* Search the free list for a fit */
-    if ((bp = mm_ceiling(tree_root,asize)) != NULL)
+    if ((bp = mm_fitter(tree_root,asize)) != NULL)
     {
         tree_root = mm_remove(tree_root,bp);
         bp = place(bp, asize);
@@ -193,7 +191,6 @@ void mm_free(void *bp)
 
     PUT(HDRP(bp), PACK(size, 0));
     PUT(FTRP(bp), PACK(size, 0));
-
     tree_root = mm_insert(tree_root,coalesce(bp));
 }
 
@@ -222,32 +219,27 @@ void *mm_realloc(void *ptr, size_t size)
 /*
 * mm_checkheap - Check the heap for consistency
 */
-void mm_checkheap(int verbose)
+void mm_checkheap(int verbose) 
 {
     char *bp = heap_listp;
 
-    if (verbose) {
-        printf("Heap (%p):\n", heap_listp);
-        printf("Root (%p):\n", tree_root);
-    }
+    if (verbose)
+    printf("Heap (%p):\n", heap_listp);
 
     if ((GET_SIZE(HDRP(heap_listp)) != DSIZE) || !GET_ALLOC(HDRP(heap_listp)))
-        printf("Bad prologue header\n");
-    
+    printf("Bad prologue header\n");
     checkblock(heap_listp);
 
     for (bp = heap_listp; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)) {
-        if (verbose)
-            printblock(bp);
-
-        checkblock(bp);
+    if (verbose) 
+        printblock(bp);
+    checkblock(bp);
     }
      
     if (verbose)
-        printblock(bp);
-
+    printblock(bp);
     if ((GET_SIZE(HDRP(bp)) != 0) || !(GET_ALLOC(HDRP(bp))))
-        printf("Bad epilogue header\n");
+    printf("Bad epilogue header\n");
 }
 
 /* The remaining routines are internal helper routines */
@@ -286,9 +278,11 @@ static void *place(void *bp, size_t asize)
 /* $end mmplace-proto */
 {
     size_t csize = GET_SIZE(HDRP(bp));   
-
-    if ((csize - asize) >= (DSIZE + OVERHEAD)) { 
-        if(GETSIZE(NEXT_BLKP(bp)) > GETSIZE(PREV_BLKP(bp))) {
+/* we have no idea what we are doing here. Randi wrote the first splitter
+   Eyky wrote the second splitter, they got us diffrent resaults so we just used
+   them both*/
+    if ((csize - asize) >= (6*OVERHEAD)) { 
+       if(GETSIZE(NEXT_BLKP(bp)) > GETSIZE(PREV_BLKP(bp))) {
             PUT(HDRP(bp), PACK(asize, 1));
             PUT(FTRP(bp), PACK(asize, 1));
             void* blah = NEXT_BLKP(bp);
@@ -329,75 +323,59 @@ static void *coalesce(void *bp)
     size_t next_alloc = GET_ALLOC(HDRP(NEXT_BLKP(bp)));
     size_t size = GET_SIZE(HDRP(bp));
 
-    if (prev_alloc && next_alloc) { /* Case 1: Neighbors both allocated */
-        return bp;
+    if (prev_alloc && next_alloc) {            /* Case 1 */
+    return bp;
     }
 
-    else if (prev_alloc && !next_alloc) { /* Case 2: Only the previous is allocated*/
-        size += GET_SIZE(HDRP(NEXT_BLKP(bp)));
+    else if (prev_alloc && !next_alloc) {      /* Case 2 */
+    size += GET_SIZE(HDRP(NEXT_BLKP(bp)));
+    tree_root = mm_remove(tree_root, NEXT_BLKP(bp));
+    PUT(HDRP(bp), PACK(size, 0));
+    PUT(FTRP(bp), PACK(size,0));
 
-        /* If only the previous block is allocated, remove the next block */
-        tree_root = mm_remove(tree_root, NEXT_BLKP(bp));
-
-        PUT(HDRP(bp), PACK(size, 0));
-        PUT(FTRP(bp), PACK(size,0));
-
-        return(bp);
     }
 
-    else if (!prev_alloc && next_alloc) { /* Case 3: Only the next is allocated */
-        size += GET_SIZE(HDRP(PREV_BLKP(bp)));
+    else if (!prev_alloc && next_alloc) {      /* Case 3 */
+    size += GET_SIZE(HDRP(PREV_BLKP(bp)));
+    tree_root = mm_remove(tree_root, PREV_BLKP(bp));
+    PUT(FTRP(bp), PACK(size, 0));
+    PUT(HDRP(PREV_BLKP(bp)), PACK(size, 0));
+    bp = PREV_BLKP(bp);
 
-        /* If only the next block is allocated, remove the previous block */
-        tree_root = mm_remove(tree_root, PREV_BLKP(bp));
 
-        PUT(FTRP(bp), PACK(size, 0));
-        PUT(HDRP(PREV_BLKP(bp)), PACK(size, 0));
-
-        return(PREV_BLKP(bp));
     }
 
-    else { /* Case 4: Neither are allocated */
-        size += GET_SIZE(HDRP(PREV_BLKP(bp))) +
-            GET_SIZE(FTRP(NEXT_BLKP(bp)));
-
-        /* If neither blocks are allocated, remove them both */
-        tree_root = mm_remove(tree_root, NEXT_BLKP(bp));
-        tree_root = mm_remove(tree_root, PREV_BLKP(bp));
-
-        PUT(HDRP(PREV_BLKP(bp)), PACK(size, 0));
-        PUT(FTRP(NEXT_BLKP(bp)), PACK(size, 0));
-
-        return(PREV_BLKP(bp));
+    else {                                     /* Case 4 */
+    size += GET_SIZE(HDRP(PREV_BLKP(bp))) + 
+        GET_SIZE(FTRP(NEXT_BLKP(bp)));
+    tree_root = mm_remove(tree_root, NEXT_BLKP(bp));
+    tree_root = mm_remove(tree_root, PREV_BLKP(bp));
+    PUT(HDRP(PREV_BLKP(bp)), PACK(size, 0));
+    PUT(FTRP(NEXT_BLKP(bp)), PACK(size, 0));
+    bp = PREV_BLKP(bp);
     }
+
+    return bp;
 }
-/* $end mmfree */
 
-static void printblock(void *bp)
+
+static void printblock(void *bp) 
 {
     size_t hsize, halloc, fsize, falloc;
 
     hsize = GET_SIZE(HDRP(bp));
-    halloc = GET_ALLOC(HDRP(bp));
+    halloc = GET_ALLOC(HDRP(bp));  
     fsize = GET_SIZE(FTRP(bp));
-    falloc = GET_ALLOC(FTRP(bp));
-
+    falloc = GET_ALLOC(FTRP(bp));  
+    
     if (hsize == 0) {
-        printf("%p: EOL\n", bp);
+    printf("%p: EOL\n", bp);
     return;
     }
 
-    if (bp == heap_listp) {
-      printf("%p: header: [%d:%c] footer: [%d:%c]\n", bp, hsize, (halloc ? 'a' : 'f'), fsize, (falloc ? 'a' : 'f'));
-
-    } else if (!halloc) {
-      printf("%p: header: [%d:%c] | left: %p, right: %p | footer: [%d:%c]\n", bp, hsize, (halloc ? 'a' : 'f'),
-         LEFT(bp), RIGHT(bp), fsize, (falloc ? 'a' : 'f'));
-
-    } else {
-      printf("%p: header: [%d:%c] footer: [%d:%c]\n", bp, hsize, (halloc ? 'a' : 'f'), fsize, (falloc ? 'a' : 'f'));
-    }
-  
+    printf("%p: header: [%d:%c] footer: [%d:%c]\n", bp, 
+       hsize, (halloc ? 'a' : 'f'), 
+       fsize, (falloc ? 'a' : 'f')); 
 }
 
 static void checkblock(void *bp)
@@ -411,31 +389,21 @@ static void checkblock(void *bp)
 /*
 * mm_insert - Insert a free block into the Binary Tree and return bp
 */
-void *mm_insert(void *root, void* bp)
-{
-    /* Determine if the tree is empty and initiate all nodes to NULL */
+void *mm_insert(void *root, void* bp){
 
-    if(root == NULL)
-    {
+    if(root == NULL){
         SETLEFT(bp, NULL);
         SETRIGHT(bp, NULL);
         return bp;
     }
-
-    else if(GETSIZE(bp) <= GETSIZE(root))
-    {
-        SETLEFT(root, mm_insert(LEFT(root),bp));
+    else if(GETSIZE(bp) <= GETSIZE(root)){
+        SETLEFT(root, mm_insert(LEFT(root), bp));
         return root;
     }
-
-    else if(GETSIZE(bp) > GETSIZE(root))
-    {
-        SETRIGHT(root, mm_insert(RIGHT(root),bp));
+    else{
+        SETRIGHT(root, mm_insert(RIGHT(root), bp));
         return root;
     }
-    
-    /* If there's an error, return -1 */
-    return -1;
 }
 
 /*
@@ -445,20 +413,78 @@ void *mm_remove(void *root, void *bp)
 {
     /* Determine if there are any children, if not, remove the node */
 
-    if(mm_children(bp) == 0)
-        return mm_remove_node(root, bp);
+    if(mm_children(bp) == 0) {
+        void *parent_node = mm_parent(root, bp);
+    
+        if(parent_node != NULL)
+        {
+            if(LEFT(parent_node) == bp)
+                SETLEFT(parent_node, NULL);
+            else
+                SETRIGHT(parent_node, NULL);
+            return root;
+        }
+        else
+        {
+            return NULL;
+        }
+    }
+    /* If there is a child, find it, and move it up */
+    else if(mm_children(bp) == 1) {
+        void *parent_node = mm_parent(root, bp);
+        void *child;
+     
+        if(LEFT(bp) != NULL)
+            child = LEFT(bp);
+        else
+            child = RIGHT(bp);
 
-    else if(mm_children(bp) == 1)
-        return mm_remove_child(root, bp);
+        if(parent_node != NULL)
+        {
+            if(LEFT(parent_node) == bp)
+                SETLEFT(parent_node, child);
+            else
+                SETRIGHT(parent_node, child);
+            return root;
+        }
+        else
+        {
+            return child;
+        }
+    }
+    else {
+        void *parent_node = mm_parent(root, bp);
+        void *replacement = mm_replace(LEFT(bp));
+        void *new_bp;
+     
+        /* Remove the replacement and store the new bp */
 
-    else
-        return mm_remove_children(root, bp);
+        new_bp = mm_remove(LEFT(bp), replacement);
+     
+        SETLEFT(replacement, new_bp);
+        SETRIGHT(replacement, RIGHT(bp));
+     
+        if(parent_node != NULL)
+        {
+            if(LEFT(parent_node) == bp)
+                SETLEFT(parent_node, replacement);
+            else
+                SETRIGHT(parent_node, replacement);
+            return root;
+        }
+        else
+        {
+            return replacement;
+        }
+    }
 }
 
+
+
 /*
-* mm_ceiling - Locate a node that best fits in a free block and return its pointer
+* mm_fitter - Locate a node that best fits in a free block and return its pointer
 */
-void *mm_ceiling(void* root, int size){
+void *mm_fitter(void* root, int size){
 
 
     if(root == NULL){ 
@@ -470,7 +496,7 @@ void *mm_ceiling(void* root, int size){
     }
 
     else if(GETSIZE(root) < size){
-        return mm_ceiling(RIGHT(root), size);
+        return mm_fitter(RIGHT(root), size);
     }    
     
 }
@@ -515,86 +541,6 @@ int mm_children(void *root)
          child_num++;
                             
     return child_num;
-}
-
-/*
-* mm_remove_node - If a given node has no children, lets remove it.
-*/
-void *mm_remove_node(void *root, void *bp)
-{
-    void *parent_node = mm_parent(root, bp);
-    
-    if(parent_node != NULL)
-    {
-        if(LEFT(parent_node) == bp)
-            SETLEFT(parent_node, NULL);
-        else
-            SETRIGHT(parent_node, NULL);
-        return root;
-    }
-    else
-    {
-        return NULL;
-    }
-}
-
-/*
-* mm_remove_child - Remove the node from the Binary Tree as long as it has one child
-*/
-void *mm_remove_child(void *root, void* bp)
-{
-    void *parent_node = mm_parent(root, bp);
-    void *child;
-    
-    /* Who is our child? Where is it? */
-
-    if(LEFT(bp) != NULL)
-        child = LEFT(bp);
-    else
-        child = RIGHT(bp);
-
-    if(parent_node != NULL)
-    {
-        if(LEFT(parent_node) == bp)
-            SETLEFT(parent_node, child);
-        else
-            SETRIGHT(parent_node, child);
-        return root;
-    }
-    else
-    {
-        return child;
-    }
-}
-
-/*
-* mm_remove_children - Remove the node from the Binary Tree as long as it has two children
-*/
-void *mm_remove_children(void *root, void *bp)
-{
-    void *parent_node = mm_parent(root, bp);
-    void *replacement = mm_replace(LEFT(bp));
-    void *new_bp;
-    
-    /* Remove the replacement and store the new bp */
-
-    new_bp = mm_remove(LEFT(bp), replacement);
-    
-    SETLEFT(replacement, new_bp);
-    SETRIGHT(replacement, RIGHT(bp));
-    
-    if(parent_node != NULL)
-    {
-        if(LEFT(parent_node) == bp)
-            SETLEFT(parent_node, replacement);
-        else
-            SETRIGHT(parent_node, replacement);
-        return root;
-    }
-    else
-    {
-        return replacement;
-    }
 }
 
 /*
